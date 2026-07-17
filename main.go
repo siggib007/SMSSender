@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/siggib007/goutils/apiclient"
 	"github.com/siggib007/goutils/logger"
 	"github.com/siggib007/goutils/utils"
 )
@@ -141,6 +143,7 @@ func main() {
 	} else {
 		*strConfFile = "env"
 	}
+	objLogger.Log(fmt.Sprintf("Loading config file %v", *strConfFile))
 
 	objCfg.Verbose = *iVerbose
 
@@ -182,10 +185,13 @@ func main() {
 		*strMsgTo = utils.GetInput("What number do you want to send to: ")
 	}
 	if *strMessage == "" {
-		*strMessage = utils.GetInput("What message are you sending: ")
+		*strMessage, err = ReadLine("What message are you sending: ")
+		if err != nil {
+			objLogger.LogEntry(fmt.Sprintf("Failed to read message: %v", err), 0, true)
+		}
 	}
 
-	if err := ValidateAlphanumericSenderId(*strMsgFrom); err != nil {
+	if err := ValidateAlphanumericSenderId(objCfg.MsgFrom); err != nil {
 		objLogger.LogEntry(err.Error(), 0, true)
 	}
 
@@ -193,22 +199,46 @@ func main() {
 	if err != nil {
 		objLogger.LogEntry(err.Error(), 0, true)
 	}
-	*strMsgTo = strPhone
 
 	strMsg, err := SanitizeSmsBody(*strMessage)
 	if err != nil {
 		objLogger.LogEntry(err.Error(), 0, true)
 	}
-	*strMessage = strMsg
 
 	objValues := url.Values{}
-	objValues.Set("From", *strMsgFrom)
-	objValues.Set("Body", *strMessage)
-	objValues.Set("To", *strMsgTo)
+	objValues.Set("From", objCfg.MsgFrom)
+	objValues.Set("Body", strMsg)
+	objValues.Set("To", strPhone)
 	strEncoded := objValues.Encode()
-	fmt.Printf("Sending an SMS to %v from %v msg: %v", *strMsgTo, *strMsgFrom, *strMessage)
-	fmt.Printf("So need to post %v to API", strEncoded)
+	fmt.Printf("Sending an SMS to %v from %v msg: %v\n", strPhone, objCfg.MsgFrom, strMsg)
+	fmt.Printf("So need to post %v to API\n", strEncoded)
+	fmt.Printf("SID: %v\n", objCfg.ClientID)
+	fmt.Printf("token: %v\n", objCfg.ClientSecret[:5])
 
+	objAPI := apiclient.NewAPIClient(objCfg.Proxy, objCfg.TimeOut, objCfg.MinQuiet, objLogger)
+	dictHeader := make(map[string]string)
+	dictHeader["Content-Type"] = "application/x-www-form-urlencoded"
+	dictHeader["Accept"] = "*/*"
+	dictHeader["Application"] = strScriptName
+	dictHeader["User-Agent"] = fmt.Sprintf("Go/%s", strScriptName)
+	dictMyParams := make(map[string]string)
+	strURL := apiclient.BuildURL(objCfg.BaseURL, objCfg.ClientID+"/Messages.json", dictMyParams)
+	fmt.Printf("Doing a post to: %v\n", strURL)
+
+	objLogger.Log("Posting Message")
+	objResp := objAPI.MakeAPICall(strURL, dictHeader, "post", strEncoded, nil, objCfg.ClientID, objCfg.ClientSecret)
+	if !objResp.BSuccess {
+		objLogger.LogEntry(fmt.Sprintf("Failed to send message: %s", objResp.StrError), 0, true)
+	}
+	dictResp, ok := objResp.ObjData.(map[string]any)
+	if !ok {
+		objLogger.LogEntry("Unexpected response format", 0, true)
+	}
+	strStatus, ok := dictResp["status"].(string)
+	if !ok {
+		objLogger.LogEntry("No status in response", 0, true)
+	}
+	objLogger.Log(fmt.Sprintf("Status: %v", strStatus))
 }
 
 var reNonDigit = regexp.MustCompile(`[^0-9]`)
@@ -297,4 +327,28 @@ func ValidateAlphanumericSenderId(strSenderId string) error {
 	}
 
 	return nil
+}
+
+// ReadLine prompts on stdout (if strPrompt is non-empty) and reads a
+// single line from stdin, spaces and all. Returns an error if stdin
+// is closed/exhausted before a line is read, or if the scanner itself
+// fails (e.g. an underlying I/O error).
+func ReadLine(strPrompt string) (string, error) {
+	if strPrompt != "" {
+		fmt.Print(strPrompt)
+	}
+
+	objScanner := bufio.NewScanner(os.Stdin)
+
+	bHasLine := objScanner.Scan()
+	if !bHasLine {
+		objErr := objScanner.Err()
+		if objErr != nil {
+			return "", fmt.Errorf("failed to read line: %w", objErr)
+		}
+		return "", fmt.Errorf("no input received (stdin closed)")
+	}
+
+	strLine := objScanner.Text()
+	return strLine, nil
 }
