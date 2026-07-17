@@ -1,0 +1,8 @@
+TwilioSID=[TwilioSID]
+TwilioToken=[TwilioToken]
+MsgFrom=[From string or number]
+BaseURL=https://api.twilio.com/2010-04-01/Accounts
+TimeOut=10
+MinQuiet=2
+MaxMsgLen=600
+#PROXY=127.0.0.1:8080 # Proxy for API calls, if needed
