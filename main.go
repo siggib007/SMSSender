@@ -196,5 +196,8 @@ func main() {
 	objSendOptions.AppName = objPaths.AppName
 	objSendOptions.Message = *strMessage
 	objSendOptions.MsgTo = *strMsgTo
-	smssender.SendSMS(objSendOptions, objTwilioCfg, objLogger)
+	if err := smssender.SendSMS(objSendOptions, objTwilioCfg, objLogger); err != nil {
+		objLogger.LogEntry(err.Error(), 0, true)
+	}
+
 }
