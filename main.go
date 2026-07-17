@@ -44,7 +44,7 @@ func main() {
 	iTimeout := flag.Int("t", objCfg.TimeOut, "Timeout value on API calls, number of seconds")
 	flag.Parse()
 
-	fmt.Print("This is a script to transfer expense items from Zoho Expense to Payday.\n")
+	fmt.Print("This is a script to send SMS via Twilio Service.\n")
 	fmt.Printf("Running from: %s\n", objPaths.StrExeDir)
 	fmt.Printf("The time now is %s\n", time.Now().Format("Monday 02 January 2006 15:04:05"))
 	fmt.Printf("Logs saved to %s\n", objPaths.StrDefLogFile)
@@ -182,7 +182,10 @@ func main() {
 	}
 
 	if *strMsgTo == "" {
-		*strMsgTo = utils.GetInput("What number do you want to send to: ")
+		*strMsgTo, err = ReadLine("What number do you want to send to: ")
+		if err != nil {
+			objLogger.LogEntry(fmt.Sprintf("Failed to read phone number: %v", err), 0, true)
+		}
 	}
 	if *strMessage == "" {
 		*strMessage, err = ReadLine("What message are you sending: ")
@@ -210,10 +213,6 @@ func main() {
 	objValues.Set("Body", strMsg)
 	objValues.Set("To", strPhone)
 	strEncoded := objValues.Encode()
-	fmt.Printf("Sending an SMS to %v from %v msg: %v\n", strPhone, objCfg.MsgFrom, strMsg)
-	fmt.Printf("So need to post %v to API\n", strEncoded)
-	fmt.Printf("SID: %v\n", objCfg.ClientID)
-	fmt.Printf("token: %v\n", objCfg.ClientSecret[:5])
 
 	objAPI := apiclient.NewAPIClient(objCfg.Proxy, objCfg.TimeOut, objCfg.MinQuiet, objLogger)
 	dictHeader := make(map[string]string)
@@ -223,15 +222,14 @@ func main() {
 	dictHeader["User-Agent"] = fmt.Sprintf("Go/%s", strScriptName)
 	dictMyParams := make(map[string]string)
 	strURL := apiclient.BuildURL(objCfg.BaseURL, objCfg.ClientID+"/Messages.json", dictMyParams)
-	fmt.Printf("Doing a post to: %v\n", strURL)
-	objCallOptions := apiclient.APICallOptions{
-		StrURL:     strURL,
-		DictHeader: dictHeader,
-		StrMethod:  "POST",
-		StrRawBody: strEncoded,
-		StrUser:    objCfg.ClientID,
-		StrPWD:     objCfg.ClientSecret,
-	}
+	objCallOptions := apiclient.APICallOptions{}
+	objCallOptions.StrURL = strURL
+	objCallOptions.DictHeader = dictHeader
+	objCallOptions.StrMethod = "POST"
+	objCallOptions.StrRawBody = strEncoded
+	objCallOptions.StrUser = objCfg.ClientID
+	objCallOptions.StrPWD = objCfg.ClientSecret
+
 	objLogger.Log("Posting Message")
 	objResp := objAPI.MakeAPICall(objCallOptions)
 	if !objResp.BSuccess {
