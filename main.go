@@ -224,9 +224,16 @@ func main() {
 	dictMyParams := make(map[string]string)
 	strURL := apiclient.BuildURL(objCfg.BaseURL, objCfg.ClientID+"/Messages.json", dictMyParams)
 	fmt.Printf("Doing a post to: %v\n", strURL)
-
+	objCallOptions := apiclient.APICallOptions{
+		StrURL:     strURL,
+		DictHeader: dictHeader,
+		StrMethod:  "POST",
+		StrRawBody: strEncoded,
+		StrUser:    objCfg.ClientID,
+		StrPWD:     objCfg.ClientSecret,
+	}
 	objLogger.Log("Posting Message")
-	objResp := objAPI.MakeAPICall(strURL, dictHeader, "post", strEncoded, nil, objCfg.ClientID, objCfg.ClientSecret)
+	objResp := objAPI.MakeAPICall(objCallOptions)
 	if !objResp.BSuccess {
 		objLogger.LogEntry(fmt.Sprintf("Failed to send message: %s", objResp.StrError), 0, true)
 	}
