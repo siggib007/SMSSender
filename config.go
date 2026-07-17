@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"strconv"
-	"strings"
 
 	"gopkg.in/ini.v1"
 )
@@ -12,28 +11,22 @@ type Config struct {
 	BaseURL      string
 	ClientID     string
 	ClientSecret string
-	Environment  string
-	Attachments  string
-	InFile       string
+	MsgFrom      string
 	Proxy        string
-	CSVDelim     rune
-	Deductible   bool
-	EmployeeID   string
 	LogFile      string
 	ConfFile     string
 	Verbose      int
 	MinQuiet     int
 	TimeOut      int
+	MaxMsgLen    int
 }
 
 func defaultConfig() Config {
 	return Config{
-		CSVDelim:   ',',
-		Deductible: true,
-		EmployeeID: "name",
-		Verbose:    1,
-		MinQuiet:   2,
-		TimeOut:    15,
+		Verbose:   1,
+		MinQuiet:  2,
+		TimeOut:   15,
+		MaxMsgLen: 800,
 	}
 }
 
@@ -44,41 +37,31 @@ func parseINI(strPath string, objCfg *Config) error {
 	}
 
 	objSec := objFile.Section("")
-	if strValue := objSec.Key("API_URL").String(); strValue != "" {
+	if strValue := objSec.Key("BaseURL").String(); strValue != "" {
 		objCfg.BaseURL = strValue
 	}
-	if strValue := objSec.Key("CLIENT_ID").String(); strValue != "" {
+	if strValue := objSec.Key("TwilioSID").String(); strValue != "" {
 		objCfg.ClientID = strValue
 	}
-	if strValue := objSec.Key("CLIENT_SECRET").String(); strValue != "" {
+	if strValue := objSec.Key("TwilioToken").String(); strValue != "" {
 		objCfg.ClientSecret = strValue
 	}
-	if strValue := objSec.Key("ATTACHMENTS").String(); strValue != "" {
-		objCfg.Attachments = strValue
+	if strValue := objSec.Key("MsgFrom").String(); strValue != "" {
+		objCfg.MsgFrom = strValue
 	}
-	if strValue := objSec.Key("IN_FILE").String(); strValue != "" {
-		objCfg.InFile = strValue
-	}
+
 	if strValue := objSec.Key("PROXY").String(); strValue != "" {
 		objCfg.Proxy = strValue
 	}
-	if strValue := objSec.Key("CSV_DELIM").String(); strValue != "" {
-		objCfg.CSVDelim = rune(strValue[0])
-	}
-	if strValue := objSec.Key("DEDUCTABLE").String(); strValue != "" {
-		objCfg.Deductible = strings.ToLower(strValue) == "true"
-	}
-	if strValue := objSec.Key("EMPLOYEE_ID").String(); strValue != "" {
-		objCfg.EmployeeID = strValue
-	}
-	if strValue := objSec.Key("Environment").String(); strValue != "" {
-		objCfg.Environment = strValue
-	}
+
 	if iValue, err := objSec.Key("TimeOut").Int(); err == nil {
 		objCfg.TimeOut = iValue
 	}
 	if iValue, err := objSec.Key("MinQuiet").Int(); err == nil {
 		objCfg.MinQuiet = iValue
+	}
+	if iValue, err := objSec.Key("MaxMsgLen").Int(); err == nil {
+		objCfg.MaxMsgLen = iValue
 	}
 	return nil
 }
@@ -93,20 +76,12 @@ func applyEnvVars(cfg *Config) {
 	if strValue := os.Getenv("CLIENT_SECRET"); strValue != "" {
 		cfg.ClientSecret = strValue
 	}
-	if strValue := os.Getenv("ATTACHMENTS"); strValue != "" {
-		cfg.Attachments = strValue
+	if strValue := os.Getenv("MSG_FROM"); strValue != "" {
+		cfg.MsgFrom = strValue
 	}
-	if strValue := os.Getenv("CSV_DELIM"); strValue != "" {
-		cfg.CSVDelim = rune(strValue[0])
-	}
-	if strValue := os.Getenv("DEDUCTABLE"); strValue != "" {
-		cfg.Deductible = strings.ToLower(strValue) == "true"
-	}
+
 	if strValue := os.Getenv("PROXY"); strValue != "" {
 		cfg.Proxy = strValue
-	}
-	if strValue := os.Getenv("EMPLOYEE_ID"); strValue != "" {
-		cfg.EmployeeID = strValue
 	}
 	if strValue := os.Getenv("TIMEOUT"); strValue != "" {
 		iVal, err := strconv.Atoi(strValue)
@@ -114,4 +89,11 @@ func applyEnvVars(cfg *Config) {
 			cfg.TimeOut = iVal
 		}
 	}
+	if strValue := os.Getenv("MAXMSG"); strValue != "" {
+		iVal, err := strconv.Atoi(strValue)
+		if err == nil {
+			cfg.MaxMsgLen = iVal
+		}
+	}
+
 }

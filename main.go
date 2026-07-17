@@ -3,15 +3,20 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/siggib007/goutils/logger"
 	"github.com/siggib007/goutils/utils"
 )
+
+const iMaxMessageLen = 600
 
 func main() {
 	// Create default base paths
@@ -26,11 +31,14 @@ func main() {
 	objCfg := defaultConfig()
 
 	// CLI flags
+	strMsgFrom := flag.String("from", "", "What number or string are you sending from")
+	strMsgTo := flag.String("to", "", "What number are you sending to")
+	strMessage := flag.String("msg", "", "What message do you want to send")
 	iVerbose := flag.Int("v", 1, "Verbosity level (1-5)")
 	strConfFile := flag.String("c", objPaths.StrDefConf, "Path to configuration file, defaults to file with same name as the application in the application directory.")
-	strBaseURL := flag.String("u", "", "Base URL for API calls")
+	strBaseURL := flag.String("url", "", "Base URL for API calls")
 	bUseEnv := flag.Bool("e", false, "Indicates not to try to load config file, only use environment variables")
-	strProxy := flag.String("x", "", "Proxy for API calls")
+	strProxy := flag.String("proxy", "", "Proxy for API calls")
 	iTimeout := flag.Int("t", objCfg.TimeOut, "Timeout value on API calls, number of seconds")
 	flag.Parse()
 
@@ -157,6 +165,9 @@ func main() {
 	if *strProxy != "" {
 		objCfg.Proxy = *strProxy
 	}
+	if *strMsgFrom != "" {
+		objCfg.MsgFrom = *strMsgFrom
+	}
 
 	if dictFlagsSet["t"] {
 		objCfg.TimeOut = *iTimeout
@@ -167,4 +178,123 @@ func main() {
 		objLogger.LogEntry("No URL or API auth config, exiting", 0, true)
 	}
 
+	if *strMsgTo == "" {
+		*strMsgTo = utils.GetInput("What number do you want to send to: ")
+	}
+	if *strMessage == "" {
+		*strMessage = utils.GetInput("What message are you sending: ")
+	}
+
+	if err := ValidateAlphanumericSenderId(*strMsgFrom); err != nil {
+		objLogger.LogEntry(err.Error(), 0, true)
+	}
+
+	strPhone, err := SanitizePhone(*strMsgTo)
+	if err != nil {
+		objLogger.LogEntry(err.Error(), 0, true)
+	}
+	*strMsgTo = strPhone
+
+	strMsg, err := SanitizeSmsBody(*strMessage)
+	if err != nil {
+		objLogger.LogEntry(err.Error(), 0, true)
+	}
+	*strMessage = strMsg
+
+	objValues := url.Values{}
+	objValues.Set("From", *strMsgFrom)
+	objValues.Set("Body", *strMessage)
+	objValues.Set("To", *strMsgTo)
+	strEncoded := objValues.Encode()
+	fmt.Printf("Sending an SMS to %v from %v msg: %v", *strMsgTo, *strMsgFrom, *strMessage)
+	fmt.Printf("So need to post %v to API", strEncoded)
+
+}
+
+var reNonDigit = regexp.MustCompile(`[^0-9]`)
+
+// SanitizePhone strips formatting characters and validates that what's
+// left looks like a plausible phone number. Returns an error (not nil)
+// on any failure, so callers can fail loud instead of silently proceeding.
+func SanitizePhone(strInput string) (string, error) {
+	strTrimmed := strings.TrimSpace(strInput)
+	if strTrimmed == "" {
+		return "", fmt.Errorf("phone number is empty")
+	}
+
+	bHasLeadingPlus := strings.HasPrefix(strTrimmed, "+")
+
+	strDigitsOnly := reNonDigit.ReplaceAllString(strTrimmed, "")
+	if strDigitsOnly == "" {
+		return "", fmt.Errorf("phone number %q contains no digits", strInput)
+	}
+
+	iLen := len(strDigitsOnly)
+	if iLen < 7 || iLen > 15 {
+		return "", fmt.Errorf("phone number %q has %d digits, expected 7-15", strInput, iLen)
+	}
+
+	strResult := strDigitsOnly
+	if bHasLeadingPlus {
+		strResult = "+" + strDigitsOnly
+	}
+
+	return strResult, nil
+}
+
+// SanitizeSmsBody removes control characters that have no legitimate
+// place in message text, while leaving normal language, punctuation,
+// and unicode untouched. Returns an error if the message is empty,
+// oversized, or made entirely of characters that got stripped.
+func SanitizeSmsBody(strInput string) (string, error) {
+	if strInput == "" {
+		return "", fmt.Errorf("message body is empty")
+	}
+
+	strCleaned := strings.Map(func(rChar rune) rune {
+		if rChar == '\n' || rChar == '\t' {
+			return rChar
+		}
+		if unicode.IsControl(rChar) {
+			return -1
+		}
+		return rChar
+	}, strInput)
+
+	strTrimmed := strings.TrimSpace(strCleaned)
+	if strTrimmed == "" {
+		return "", fmt.Errorf("message body contained no usable text after sanitization")
+	}
+
+	iLen := len([]rune(strTrimmed))
+	if iLen > iMaxMessageLen {
+		return "", fmt.Errorf("message body is %d characters, exceeds max of %d", iLen, iMaxMessageLen)
+	}
+
+	return strTrimmed, nil
+}
+
+const iMaxSenderIdLen = 11
+
+var reValidSenderIdChars = regexp.MustCompile(`^[A-Za-z0-9 &_-]+$`)
+
+// ValidateAlphanumericSenderId enforces Twilio's alphanumeric sender ID
+// requirements: up to 11 characters, letters/digits/spaces plus
+// hyphen, underscore, and ampersand only. Returns an error describing
+// the specific violation rather than a bare pass/fail.
+func ValidateAlphanumericSenderId(strSenderId string) error {
+	if strSenderId == "" {
+		return fmt.Errorf("sender ID is empty")
+	}
+
+	iLen := len(strSenderId)
+	if iLen > iMaxSenderIdLen {
+		return fmt.Errorf("sender ID %q is %d characters, exceeds max of %d", strSenderId, iLen, iMaxSenderIdLen)
+	}
+
+	if !reValidSenderIdChars.MatchString(strSenderId) {
+		return fmt.Errorf("sender ID %q contains characters outside the allowed set (letters, digits, space, -, _, &)", strSenderId)
+	}
+
+	return nil
 }
