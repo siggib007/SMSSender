@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/siggib007/goutils/comms"
 	"github.com/siggib007/goutils/logger"
-	"github.com/siggib007/goutils/smssender"
 	"github.com/siggib007/goutils/utils"
 )
 
@@ -105,7 +105,7 @@ func main() {
 			objLogger.LogEntry(fmt.Sprintf("Failed to read message: %v", err), 0, true)
 		}
 	}
-	objTwilioCfg := smssender.TwilioConfig{}
+	objTwilioCfg := comms.TwilioConfig{}
 	objTwilioCfg.BaseURL = objCfg.BaseURL
 	objTwilioCfg.ClientID = objCfg.ClientID
 	objTwilioCfg.ClientSecret = objCfg.ClientSecret
@@ -115,11 +115,11 @@ func main() {
 	objTwilioCfg.Proxy = objCfg.Proxy
 	objTwilioCfg.TimeOut = objCfg.TimeOut
 
-	objSendOptions := smssender.SendOptions{}
+	objSendOptions := comms.SendOptions{}
 	objSendOptions.AppName = objPaths.AppName
 	objSendOptions.Message = *strMessage
 	objSendOptions.MsgTo = *strMsgTo
-	if err := smssender.SendSMS(objSendOptions, objTwilioCfg, objLogger); err != nil {
+	if err := comms.SendSMS(objSendOptions, objTwilioCfg, objLogger); err != nil {
 		objLogger.LogEntry(err.Error(), 0, true)
 	}
 
